@@ -67,9 +67,10 @@ taberu-mate/
 │   └── vite.config.ts
 │
 ├── backend/ # API 后端 （使用FastAPI）
-│   ├── app/
+│   ├── src/taberu_mate_backend
 │   │   ├── main.py
 │   │   └── ...
+│   ├── tests/
 │   ├── pyproject.toml
 │   └── uv.lock
 │
