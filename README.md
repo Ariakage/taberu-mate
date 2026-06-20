@@ -3,7 +3,7 @@
   </a><a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/python-3.13%2B-blue?style=flat-square&logo=python&logoColor=white" alt="Python 3.13+" />
   </a><a href="https://nodejs.org/">
-    <img src="https://img.shields.io/badge/node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20+" />
+    <img src="https://img.shields.io/badge/node.js-24%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 24+" />
   </a><a href="https://vuejs.org/">
     <img src="https://img.shields.io/badge/vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3" />
   </a><a href="https://docs.astral.sh/uv/">

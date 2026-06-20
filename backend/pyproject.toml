@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 authors = [{name = "Ariakage", email = "ariakage233@gmail.com"}]
 license = {text = "AGPL-3.0-or-only"}
 dependencies = [
+    "argon2-cffi>=25.1.0",
     "fastapi[standard]>=0.138.0",
     "pydantic-settings>=2.14.2",
     "python-multipart>=0.0.32",

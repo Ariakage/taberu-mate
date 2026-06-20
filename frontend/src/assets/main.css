@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  color: #1f2937;
+  color-scheme: light;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #fff8ef;
+  --tm-primary: #ff7a45;
+  --tm-background: #fff8ef;
+  --tm-surface: #ffffff;
+  --tm-text: #1f2937;
+  --tm-muted: #667085;
+  --tm-border: #efdccc;
+  --tm-green: #6baf92;
+  --tm-blue: #8abfe8;
+  --van-primary-color: #ff7a45;
+  --van-success-color: #6baf92;
+  --van-warning-color: #f59e0b;
+  --van-danger-color: #ef4444;
+  --van-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --van-radius-md: 8px;
+  --van-radius-lg: 8px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+  background: #fff8ef;
+}
+
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+  background-color: #fff8ef;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tm-app-bg {
+  background-color: #fff8ef;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 122, 69, 0.05) 0,
+    rgba(255, 122, 69, 0.05) 1px,
+    transparent 1px,
+    transparent 14px
+  );
+}
+
+.tm-card {
+  border: 1px solid var(--tm-border);
+  border-radius: 8px;
+  background: var(--tm-surface);
+}
+
+.tm-card-muted {
+  border: 1px solid #f3e3d6;
+  border-radius: 8px;
+  background: #fffaf4;
+}
+
+.tm-icon-tile {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.tm-flat-button {
+  border-radius: 8px;
+  font-weight: 800;
+}

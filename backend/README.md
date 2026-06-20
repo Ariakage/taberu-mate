@@ -9,4 +9,35 @@
 ## 🚀 QuickStart
 ```bash
 uv sync
+cp .env.example .env
+uv run fastapi dev src/taberu_mate_backend/main.py
+```
+
+API docs:
+
+- Swagger UI: http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/api/v1/health
+- Auth flow: [docs/auth-flow.md](docs/auth-flow.md)
+
+## Project Layout
+
+```text
+src/taberu_mate_backend/
+├── api/          # API routers and route handlers
+├── core/         # App settings and shared core utilities
+├── crud/         # Data access helpers
+├── db/           # Database session and migrations entry points
+├── models/       # ORM models
+├── schemas/      # Pydantic request/response schemas
+├── services/     # Business logic
+├── utils/        # General-purpose helpers
+└── main.py       # FastAPI app factory and ASGI app
+```
+
+## Development
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy src
 ```
