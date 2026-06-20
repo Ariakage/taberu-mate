@@ -1,24 +1,14 @@
-<div align="center">
-  <strong style="font-size: 32px;">TaberuMate</strong>
-  <br />
-  <a href="LICENSE">
+<h1 align="center">TaberuMate<br/><a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg?style=flat-square" alt="License: AGPL-3.0-only" />
-  </a>
-  <a href="https://www.python.org/">
+  </a><a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/python-3.13%2B-blue?style=flat-square&logo=python&logoColor=white" alt="Python 3.13+" />
-  </a>
-  <a href="https://nodejs.org/">
+  </a><a href="https://nodejs.org/">
     <img src="https://img.shields.io/badge/node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20+" />
-  </a>
-  <a href="https://vuejs.org/">
+  </a><a href="https://vuejs.org/">
     <img src="https://img.shields.io/badge/vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3" />
-  </a>
-  <a href="https://docs.astral.sh/uv/">
+  </a><a href="https://docs.astral.sh/uv/">
     <img src="https://img.shields.io/badge/package%20manager-uv-261230?style=flat-square" alt="uv" />
-  </a>
-</div>
-
-<hr />
+  </a></h1>
 
 <p align="center">
   <a href="https://github.com/ariakage/taberu-mate">
