@@ -22,7 +22,7 @@ function handleMenuPhoto(event: Event) {
 <template>
   <section class="min-h-dvh bg-transparent px-4 pb-32 text-[#1F2937] pt-[calc(env(safe-area-inset-top)+1rem)]">
     <header class="tm-card mb-4 p-4">
-      <p class="text-sm font-semibold text-[#FF7A45]">TaberuMate</p>
+      <p class="text-sm font-semibold text-[#FF7A45]">食べ友</p>
       <h1 class="mt-2 text-2xl font-black leading-tight tracking-normal">点单</h1>
     </header>
 
