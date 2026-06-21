@@ -71,6 +71,39 @@ def init_db(settings: Settings) -> None:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                avoidances_json TEXT NOT NULL DEFAULT '[]',
+                allergies_json TEXT NOT NULL DEFAULT '[]',
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS order_history (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                restaurant_name TEXT,
+                target_language TEXT,
+                customer_remark TEXT NOT NULL,
+                total_label TEXT NOT NULL,
+                total_amount REAL,
+                items_json TEXT NOT NULL,
+                generated_order_json TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_order_history_user_created
+            ON order_history (user_id, created_at DESC)
+            """
+        )
         connection.commit()
 
 

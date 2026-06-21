@@ -82,3 +82,7 @@ out/
 # Agent files
 AGENTS.md
 PROMPTS.md
+
+# Others
+.uploads/
+temp/

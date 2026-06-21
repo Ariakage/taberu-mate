@@ -13,6 +13,7 @@ def build_client(tmp_path: Path) -> tuple[TestClient, Settings]:
     settings = Settings(
         database_path=tmp_path / "test.db",
         auth_token_secret="test-auth-token-secret-with-enough-length",
+        auth_cookie_secure=True,
     )
     return TestClient(create_app(settings), base_url="https://testserver"), settings
 
@@ -281,3 +282,143 @@ def test_logout_revokes_access_token_jti(tmp_path: Path) -> None:
         headers={"Authorization": f"Bearer {access_token}"},
     )
     assert me_response.status_code == 401
+
+
+def test_user_profile_defaults_and_update(tmp_path: Path) -> None:
+    client, _settings = build_client(tmp_path)
+    token_body = login_test_user(client, username="profileuser")
+    auth_headers = {
+        "Authorization": f"Bearer {token_body['access_token']}",
+        "X-CSRF-Token": token_body["csrf_token"],
+    }
+
+    default_response = client.get(
+        "/api/v1/users/me/profile",
+        headers={"Authorization": f"Bearer {token_body['access_token']}"},
+    )
+
+    assert default_response.status_code == 200
+    default_profile = default_response.json()
+    assert default_profile["avoidances"] == []
+    assert default_profile["allergies"] == []
+    assert default_profile["notes"] == ""
+    assert default_profile["updated_at"] is None
+
+    update_response = client.put(
+        "/api/v1/users/me/profile",
+        headers=auth_headers,
+        json={
+            "avoidances": [" 香菜 ", "太辣"],
+            "allergies": ["花生"],
+            "notes": "  少油少盐  ",
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated_profile = update_response.json()
+    assert updated_profile["avoidances"] == ["香菜", "太辣"]
+    assert updated_profile["allergies"] == ["花生"]
+    assert updated_profile["notes"] == "少油少盐"
+    assert updated_profile["updated_at"] is not None
+
+
+def test_order_history_roundtrip_and_dashboard(tmp_path: Path) -> None:
+    client, _settings = build_client(tmp_path)
+    token_body = login_test_user(client, username="historyuser")
+    auth_headers = {
+        "Authorization": f"Bearer {token_body['access_token']}",
+        "X-CSRF-Token": token_body["csrf_token"],
+    }
+
+    profile_response = client.put(
+        "/api/v1/users/me/profile",
+        headers=auth_headers,
+        json={
+            "avoidances": ["香菜", "猪肉"],
+            "allergies": ["花生"],
+            "notes": "有过敏请确认",
+        },
+    )
+    assert profile_response.status_code == 200
+
+    create_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=auth_headers,
+        json={
+            "restaurant_name": "食べ友食堂",
+            "target_language": "ja",
+            "customer_remark": "不要香菜",
+            "total_label": "¥1800",
+            "total_amount": 1800,
+            "items": [
+                {
+                    "id": "item_gyoza",
+                    "name_translated": "煎饺",
+                    "quantity": 2,
+                }
+            ],
+            "generated_order": {
+                "local_language_order_text": "餃子を二人前お願いします。",
+                "total": {"display_text": "¥1800"},
+            },
+        },
+    )
+
+    assert create_response.status_code == 201
+    created_order = create_response.json()
+    assert created_order["restaurant_name"] == "食べ友食堂"
+    assert created_order["target_language"] == "ja"
+    assert created_order["items"][0]["quantity"] == 2
+    assert created_order["generated_order"]["total"]["display_text"] == "¥1800"
+
+    history_response = client.get(
+        "/api/v1/users/me/orders",
+        headers={"Authorization": f"Bearer {token_body['access_token']}"},
+    )
+
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["id"] == created_order["id"]
+
+    dashboard_response = client.get(
+        "/api/v1/users/me/dashboard",
+        headers={"Authorization": f"Bearer {token_body['access_token']}"},
+    )
+
+    assert dashboard_response.status_code == 200
+    dashboard = dashboard_response.json()
+    assert dashboard["stats"]["avoid_count"] == 2
+    assert dashboard["stats"]["allergy_count"] == 1
+    assert dashboard["stats"]["order_count"] == 1
+    assert dashboard["stats"]["updated_at"] is not None
+    assert dashboard["recent_orders"][0]["id"] == created_order["id"]
+
+
+def test_profile_writes_require_csrf(tmp_path: Path) -> None:
+    client, _settings = build_client(tmp_path)
+    token_body = login_test_user(client, username="csrffood")
+
+    response = client.put(
+        "/api/v1/users/me/profile",
+        headers={"Authorization": f"Bearer {token_body['access_token']}"},
+        json={"avoidances": ["香菜"], "allergies": [], "notes": ""},
+    )
+
+    assert response.status_code == 403
+
+
+def login_test_user(client: TestClient, *, username: str) -> dict[str, object]:
+    headers = csrf_headers(client)
+    register_response = client.post(
+        "/api/v1/auth/register",
+        headers=headers,
+        json={"username": username, "avatar_url": None, "password": "strong-password"},
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        headers=headers,
+        json={"username": username, "password": "strong-password"},
+    )
+    assert login_response.status_code == 200
+    return login_response.json()

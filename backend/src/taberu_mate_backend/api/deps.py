@@ -17,6 +17,7 @@ from taberu_mate_backend.crud.tokens import is_access_token_revoked
 from taberu_mate_backend.crud.users import get_user_by_id
 from taberu_mate_backend.db.session import get_connection
 from taberu_mate_backend.models.user import User
+from taberu_mate_backend.services.ai import AiChatService
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,10 @@ def get_current_user(
     current_auth: Annotated[AuthenticatedUser, Depends(get_current_auth)],
 ) -> User:
     return current_auth.user
+
+
+def get_ai_chat_service(settings: Annotated[Settings, Depends(get_settings)]) -> AiChatService:
+    return AiChatService(settings=settings)
 
 
 def verify_csrf(request: Request, settings: Annotated[Settings, Depends(get_settings)]) -> None:

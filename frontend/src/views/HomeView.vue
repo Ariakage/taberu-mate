@@ -1,40 +1,122 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import {
   ArrowRight,
   Bell,
   Camera,
+  History,
   X,
   Languages,
   ListChecks,
   ScanText,
   SlidersHorizontal,
 } from 'lucide-vue-next'
-import { Tag as VanTag } from 'vant'
+import { showToast, Tag as VanTag } from 'vant'
 
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { useMenuScanStore } from '@/stores/menuScan'
+import { useUserProfileStore } from '@/stores/userProfile'
 
+const router = useRouter()
 const appStore = useAppStore()
+const authStore = useAuthStore()
+const menuScanStore = useMenuScanStore()
+const userProfileStore = useUserProfileStore()
 const { appName, japaneseName } = storeToRefs(appStore)
+const { loading: menuScanLoading, statusMessage: menuScanStatusMessage } =
+  storeToRefs(menuScanStore)
+const { profile, recentOrders } = storeToRefs(userProfileStore)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFileName = ref('')
-const recentAvoids = ['花生', '香菜', '生冷海鲜', '太辣']
+const recentAvoids = computed(() => {
+  if (!authStore.isAuthenticated) {
+    return ['登录后同步']
+  }
+
+  return profile.value?.avoidances.length ? profile.value.avoidances : ['暂无忌口']
+})
+const recentOrderCards = computed(() =>
+  authStore.isAuthenticated ? recentOrders.value.slice(0, 3) : [],
+)
+
+onMounted(async () => {
+  await authStore.initialize()
+  if (authStore.isAuthenticated) {
+    void userProfileStore.loadDashboard()
+  }
+})
+
+watch(
+  () => authStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (isAuthenticated) {
+      void userProfileStore.loadDashboard(true)
+      return
+    }
+
+    userProfileStore.clear()
+  },
+)
 
 function openCamera() {
   fileInput.value?.click()
 }
 
-function handleMenuPhoto(event: Event) {
+async function handleMenuPhoto(event: Event) {
   const target = event.target as HTMLInputElement
-  selectedFileName.value = target.files?.[0]?.name ?? ''
+  const file = target.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  selectedFileName.value = file.name
+  target.value = ''
+
+  await authStore.initialize()
+
+  if (!authStore.isAuthenticated) {
+    selectedFileName.value = ''
+    showToast('需要登录才能使用菜单识别')
+    return
+  }
+
   appStore.setMenuPhoto(selectedFileName.value)
+
+  const scanned = await menuScanStore.scan(file)
+
+  if (!scanned) {
+    showToast(menuScanStore.errorMessage || '菜单识别失败，请稍后再试')
+    return
+  }
+
+  showToast('菜单识别完成')
+  await router.push('/orders')
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '刚刚'
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 </script>
 
 <template>
-  <section class="min-h-dvh bg-transparent px-4 pb-32 text-[#1F2937] pt-[calc(env(safe-area-inset-top)+1rem)]">
+  <section
+    class="min-h-dvh bg-transparent px-4 pb-32 text-[#1F2937] pt-[calc(env(safe-area-inset-top)+1rem)]"
+  >
     <header class="tm-card relative min-h-[148px] overflow-hidden p-4">
       <div
         class="pointer-events-none absolute bottom-[-36px] right-[-28px] size-36 rounded-full bg-[#FFF1E8]"
@@ -49,8 +131,12 @@ function handleMenuPhoto(event: Event) {
       <div class="flex items-start justify-between gap-4">
         <div class="relative z-10 min-w-0 max-w-[230px] pr-3">
           <p class="text-sm font-semibold tracking-normal text-[#FF7A45]">{{ japaneseName }}</p>
-          <h1 class="mt-1 text-[27px] font-black leading-tight tracking-normal text-[#1F2937]">{{ appName }}</h1>
-          <p class="mt-2 text-sm font-medium leading-5 text-[#667085]">不怕陌生菜单，陪你旅行吃好饭喵～</p>
+          <h1 class="mt-1 text-[27px] font-black leading-tight tracking-normal text-[#1F2937]">
+            {{ appName }}
+          </h1>
+          <p class="mt-2 text-sm font-medium leading-5 text-[#667085]">
+            不怕陌生菜单，陪你旅行吃好饭喵～
+          </p>
         </div>
         <button
           class="relative z-20 grid size-10 shrink-0 place-items-center rounded-lg border border-[#EFDCCC] bg-white/88 text-[#1F2937] backdrop-blur"
@@ -109,18 +195,25 @@ function handleMenuPhoto(event: Event) {
           <button
             class="flex w-full items-center gap-3 rounded-lg border border-[#FFC8A8] bg-[#FFF1E8] p-3 text-left text-[#1F2937]"
             type="button"
+            :disabled="menuScanLoading"
             @click="openCamera"
           >
-            <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-[#FF7A45] text-white">
+            <span
+              class="grid size-12 shrink-0 place-items-center rounded-lg bg-[#FF7A45] text-white"
+            >
               <Camera :size="24" />
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block text-base font-black leading-5">拍菜单开始</span>
+              <span class="block text-base font-black leading-5">
+                {{ menuScanLoading ? '正在识别菜单...' : '拍菜单开始' }}
+              </span>
               <span class="mt-1 block truncate text-xs font-semibold text-[#BA5A32]">
                 支持菜单识别、忌口备注和当地语言点单
               </span>
             </span>
-            <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-white text-[#FF7A45]">
+            <span
+              class="grid size-8 shrink-0 place-items-center rounded-lg bg-white text-[#FF7A45]"
+            >
               <ArrowRight :size="18" />
             </span>
           </button>
@@ -130,6 +223,13 @@ function handleMenuPhoto(event: Event) {
             class="mt-3 truncate rounded-lg border border-[#CBE5D8] bg-[#F1FAF6] px-3 py-2 text-xs font-semibold text-[#4F8D74]"
           >
             已选择：{{ selectedFileName }}
+          </p>
+
+          <p
+            v-if="menuScanStatusMessage"
+            class="mt-3 rounded-lg border border-[#DCECF8] bg-white px-3 py-2 text-xs font-black text-[#4C7CA3]"
+          >
+            {{ menuScanStatusMessage }}
           </p>
 
           <div class="mt-3 rounded-lg border border-[#DCECF8] bg-white p-3">
@@ -144,21 +244,47 @@ function handleMenuPhoto(event: Event) {
       <section class="tm-card mt-4 p-4">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <h2 class="text-lg font-black leading-6 tracking-normal text-[#1F2937]">最近吃过的</h2>
-            <p class="mt-1 text-sm font-semibold text-[#667085]">忌口</p>
+            <h2 class="text-lg font-black leading-6 tracking-normal text-[#1F2937]">最近点过的</h2>
+            <p class="mt-1 text-sm font-semibold text-[#667085]">
+              {{ authStore.isAuthenticated ? '来自饭饭档案' : '登录后同步历史' }}
+            </p>
           </div>
-          <div class="rounded-lg border border-[#FFD8D3] bg-[#FFF2F0] px-2.5 py-1 text-xs font-black text-[#D05145]">
-            常用备注
+          <div
+            class="rounded-lg border border-[#FFD8D3] bg-[#FFF2F0] px-2.5 py-1 text-xs font-black text-[#D05145]"
+          >
+            {{ authStore.isAuthenticated ? '已同步' : '未登录' }}
           </div>
         </div>
 
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div v-if="recentOrderCards.length" class="mt-3 space-y-2">
+          <article
+            v-for="order in recentOrderCards"
+            :key="order.id"
+            class="rounded-lg border border-[#F3E3D6] bg-white px-3 py-2"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-black leading-5 text-[#1F2937]">
+                  {{ order.restaurant_name || '未命名餐厅' }}
+                </p>
+                <p class="mt-0.5 text-[11px] font-semibold text-[#667085]">
+                  {{ formatShortDate(order.created_at) }}
+                  <span v-if="order.customer_remark"> · {{ order.customer_remark }}</span>
+                </p>
+              </div>
+              <p class="shrink-0 text-sm font-black text-[#FF7A45]">{{ order.total_label }}</p>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="mt-3 flex flex-wrap gap-2">
           <span
             v-for="avoid in recentAvoids"
             :key="avoid"
             class="inline-flex items-center gap-1.5 rounded-lg border border-[#FFD8D3] bg-[#FFF2F0] px-3 py-2 text-xs font-black text-[#B95048]"
           >
-            <X :size="14" :stroke-width="3" />
+            <X v-if="authStore.isAuthenticated" :size="14" :stroke-width="3" />
+            <History v-else :size="14" :stroke-width="3" />
             {{ avoid }}
           </span>
         </div>

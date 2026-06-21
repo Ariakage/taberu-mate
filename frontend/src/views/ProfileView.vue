@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   CalendarClock,
@@ -8,13 +8,24 @@ import {
   History,
   ListChecks,
   LogOut,
+  Save,
   UserRound,
 } from 'lucide-vue-next'
+import { showToast } from 'vant'
 
 import { useAuthStore } from '@/stores/auth'
+import { useUserProfileStore } from '@/stores/userProfile'
 
 const authStore = useAuthStore()
+const userProfileStore = useUserProfileStore()
 const { displayName, errorMessage, isAuthenticated, loading, user } = storeToRefs(authStore)
+const {
+  errorMessage: profileErrorMessage,
+  profile,
+  recentOrders,
+  saving: profileSaving,
+  stats,
+} = storeToRefs(userProfileStore)
 const mode = ref<'login' | 'register'>('login')
 
 const form = reactive({
@@ -23,28 +34,63 @@ const form = reactive({
   avatarUrl: '',
   password: '',
 })
+const profileForm = reactive({
+  avoidancesText: '',
+  allergiesText: '',
+  notes: '',
+})
 
 const modeTitle = computed(() => (mode.value === 'login' ? '欢迎回来' : '创建账号'))
 const submitText = computed(() => (mode.value === 'login' ? '登录' : '注册并登录'))
-const switchText = computed(() => (mode.value === 'login' ? '还没有账号？创建一个' : '已有账号？去登录'))
-const loginOverviewTitle = computed(() => (isAuthenticated.value && user.value ? '已登录到食べ友账号' : '登录后开启饭饭档案'))
+const switchText = computed(() =>
+  mode.value === 'login' ? '还没有账号？创建一个' : '已有账号？去登录',
+)
+const loginOverviewTitle = computed(() =>
+  isAuthenticated.value && user.value ? '已登录到食べ友账号' : '登录后开启饭饭档案',
+)
 const loginOverviewText = computed(() =>
   isAuthenticated.value && user.value
     ? `当前账号 @${user.value.username}，忌口、过敏和历史菜单会保存到这个档案。`
     : '登录或创建账号后，忌口、过敏和常用备注才会保存到你的档案。',
 )
 const savedProfileText = computed(() =>
-  isAuthenticated.value ? '当前账号可继续补充忌口和过敏信息' : '登录后保存忌口、过敏和常用备注',
+  isAuthenticated.value
+    ? `${stats.value.avoid_count} 条忌口，${stats.value.allergy_count} 条过敏提醒`
+    : '登录后保存忌口、过敏和常用备注',
 )
 const sessionHintText = computed(() =>
   isAuthenticated.value ? '退出登录前，饭饭档案会留在账号里' : '使用账号登录，换设备也能找回档案',
 )
 const profileStats = computed(() => ({
-  avoidCount: isAuthenticated.value ? '3 条' : '登录后同步',
-  allergyCount: isAuthenticated.value ? '2 条' : '登录后同步',
-  menuCount: isAuthenticated.value ? '6 份' : '登录后同步',
-  updatedAt: isAuthenticated.value ? '今天 18:20' : '尚未同步',
+  avoidCount: isAuthenticated.value ? `${stats.value.avoid_count} 条` : '登录后同步',
+  allergyCount: isAuthenticated.value ? `${stats.value.allergy_count} 条` : '登录后同步',
+  menuCount: isAuthenticated.value ? `${stats.value.order_count} 份` : '登录后同步',
+  updatedAt: isAuthenticated.value ? formatShortDate(stats.value.updated_at) : '尚未同步',
 }))
+const profileAvoidances = computed(() => profile.value?.avoidances ?? [])
+const profileAllergies = computed(() => profile.value?.allergies ?? [])
+
+onMounted(async () => {
+  await authStore.initialize()
+  if (authStore.isAuthenticated) {
+    await loadDashboard()
+  }
+})
+
+watch(
+  () => authStore.isAuthenticated,
+  async (nextIsAuthenticated) => {
+    if (nextIsAuthenticated) {
+      await loadDashboard(true)
+      return
+    }
+
+    userProfileStore.clear()
+    syncProfileForm()
+  },
+)
+
+watch(profile, () => syncProfileForm(), { immediate: true })
 
 function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login'
@@ -52,25 +98,87 @@ function switchMode() {
 }
 
 async function submitAuth() {
-  if (mode.value === 'login') {
-    await authStore.login({
-      username: form.username,
-      password: form.password,
+  const succeeded =
+    mode.value === 'login'
+      ? await authStore.login({
+          username: form.username,
+          password: form.password,
+        })
+      : await authStore.register({
+          username: form.username,
+          nickname: form.nickname,
+          avatar_url: form.avatarUrl,
+          password: form.password,
+        })
+
+  if (succeeded) {
+    await loadDashboard(true)
+  }
+}
+
+async function loadDashboard(force = false) {
+  try {
+    await userProfileStore.loadDashboard(force)
+  } catch {
+    // The store exposes a localized error message in the UI.
+  }
+}
+
+async function saveProfile() {
+  try {
+    await userProfileStore.saveProfile({
+      avoidances: parseListText(profileForm.avoidancesText),
+      allergies: parseListText(profileForm.allergiesText),
+      notes: profileForm.notes,
     })
-    return
+    showToast('饭饭档案已同步')
+  } catch {
+    showToast(profileErrorMessage.value || '饭饭档案同步失败')
+  }
+}
+
+async function logout() {
+  await authStore.logout()
+  userProfileStore.clear()
+}
+
+function syncProfileForm() {
+  profileForm.avoidancesText = profile.value?.avoidances.join('，') ?? ''
+  profileForm.allergiesText = profile.value?.allergies.join('，') ?? ''
+  profileForm.notes = profile.value?.notes ?? ''
+}
+
+function parseListText(value: string) {
+  return value
+    .split(/[，,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, items) => items.indexOf(item) === index)
+}
+
+function formatShortDate(value?: string | null) {
+  if (!value) {
+    return '尚未同步'
   }
 
-  await authStore.register({
-    username: form.username,
-    nickname: form.nickname,
-    avatar_url: form.avatarUrl,
-    password: form.password,
-  })
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '刚刚'
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 </script>
 
 <template>
-  <section class="min-h-dvh bg-transparent px-4 pb-32 text-[#1F2937] pt-[calc(env(safe-area-inset-top)+1rem)]">
+  <section
+    class="min-h-dvh bg-transparent px-4 pb-32 text-[#1F2937] pt-[calc(env(safe-area-inset-top)+1rem)]"
+  >
     <header class="tm-card mb-4 p-4">
       <p class="text-sm font-semibold text-[#FF7A45]">食べ友</p>
       <h1 class="mt-2 text-2xl font-black leading-tight tracking-normal">我的饭饭档案</h1>
@@ -95,12 +203,16 @@ async function submitAuth() {
         <article class="tm-card p-3">
           <ClipboardList class="mb-2 text-[#6BAF92]" :size="19" />
           <p class="text-xs font-black leading-4 text-[#1F2937]">档案保存</p>
-          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">{{ savedProfileText }}</p>
+          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">
+            {{ savedProfileText }}
+          </p>
         </article>
         <article class="tm-card p-3">
           <History class="mb-2 text-[#8ABFE8]" :size="19" />
           <p class="text-xs font-black leading-4 text-[#1F2937]">登录会话</p>
-          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">{{ sessionHintText }}</p>
+          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">
+            {{ sessionHintText }}
+          </p>
         </article>
       </div>
     </section>
@@ -120,7 +232,9 @@ async function submitAuth() {
         <div class="min-w-0 flex-1">
           <p class="truncate text-xl font-black leading-6">{{ displayName }}</p>
           <p class="mt-1 truncate text-sm font-semibold text-[#667085]">@{{ user.username }}</p>
-          <p class="mt-2 text-xs font-semibold text-[#667085]">食べ友会帮你记住忌口、过敏和常用备注。</p>
+          <p class="mt-2 text-xs font-semibold text-[#667085]">
+            食べ友会帮你记住忌口、过敏和常用备注。
+          </p>
         </div>
       </div>
 
@@ -128,17 +242,23 @@ async function submitAuth() {
         <div class="tm-card-muted p-3">
           <ListChecks class="mb-2 text-[#6BAF92]" :size="18" />
           <p class="text-xs font-black leading-4 text-[#1F2937]">忌口备注</p>
-          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">不吃香菜等</p>
+          <p class="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-[#667085]">
+            {{ profileAvoidances.length ? profileAvoidances.join('、') : '暂无忌口' }}
+          </p>
         </div>
         <div class="tm-card-muted p-3">
           <ClipboardList class="mb-2 text-[#FF7A45]" :size="18" />
           <p class="text-xs font-black leading-4 text-[#1F2937]">过敏信息</p>
-          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">花生海鲜等</p>
+          <p class="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-[#667085]">
+            {{ profileAllergies.length ? profileAllergies.join('、') : '暂无过敏' }}
+          </p>
         </div>
         <div class="tm-card-muted p-3">
           <History class="mb-2 text-[#8ABFE8]" :size="18" />
           <p class="text-xs font-black leading-4 text-[#1F2937]">历史菜单</p>
-          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">最近点过的</p>
+          <p class="mt-1 text-[11px] font-semibold leading-4 text-[#667085]">
+            {{ stats.order_count ? `${stats.order_count} 份` : '暂无历史' }}
+          </p>
         </div>
       </div>
 
@@ -146,7 +266,7 @@ async function submitAuth() {
         class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#FFD8D3] bg-[#FFF2F0] px-4 py-3 text-sm font-black text-[#B95048]"
         type="button"
         :disabled="loading"
-        @click="authStore.logout"
+        @click="logout"
       >
         <LogOut :size="17" />
         退出登录
@@ -238,13 +358,77 @@ async function submitAuth() {
       </form>
     </section>
 
+    <section v-if="isAuthenticated" class="mt-4 tm-card overflow-hidden">
+      <div class="border-b border-[#F3E3D6] p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-black leading-5 text-[#1F2937]">编辑饭饭档案</p>
+            <p class="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+              多个项目用逗号、顿号或换行分隔。
+            </p>
+          </div>
+          <div class="tm-icon-tile bg-[#FFF1E8] text-[#FF7A45]">
+            <CloudSync :size="21" />
+          </div>
+        </div>
+      </div>
+
+      <form class="space-y-3 p-4" @submit.prevent="saveProfile">
+        <label class="block">
+          <span class="text-xs font-black text-[#667085]">忌口</span>
+          <textarea
+            v-model="profileForm.avoidancesText"
+            class="mt-1 min-h-20 w-full resize-none rounded-lg border border-[#EFDCCC] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#FF7A45]"
+            maxlength="500"
+            placeholder="例如：香菜，太辣，猪肉"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs font-black text-[#667085]">过敏</span>
+          <textarea
+            v-model="profileForm.allergiesText"
+            class="mt-1 min-h-20 w-full resize-none rounded-lg border border-[#EFDCCC] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#FF7A45]"
+            maxlength="500"
+            placeholder="例如：花生，海鲜"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs font-black text-[#667085]">常用备注</span>
+          <textarea
+            v-model="profileForm.notes"
+            class="mt-1 min-h-24 w-full resize-none rounded-lg border border-[#EFDCCC] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#FF7A45]"
+            maxlength="1000"
+            placeholder="例如：少油少盐，有过敏请帮忙确认"
+          />
+        </label>
+
+        <p
+          v-if="profileErrorMessage"
+          class="rounded-lg border border-[#FFD8D3] bg-[#FFF2F0] px-3 py-2 text-xs font-black text-[#B95048]"
+        >
+          {{ profileErrorMessage }}
+        </p>
+
+        <button
+          class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#FFC8A8] bg-[#FF7A45] px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+          type="submit"
+          :disabled="profileSaving"
+        >
+          <Save :size="17" />
+          {{ profileSaving ? '同步中...' : '保存饭饭档案' }}
+        </button>
+      </form>
+    </section>
+
     <section class="mt-4 tm-card overflow-hidden">
       <div class="border-b border-[#F3E3D6] p-4">
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-sm font-black leading-5 text-[#1F2937]">饭饭档案概览</p>
             <p class="mt-1 text-xs font-semibold leading-5 text-[#667085]">
-              这里先展示前端占位数据，之后可以从后端读取账号档案。
+              {{ isAuthenticated ? '已从后端同步账号档案。' : '登录后从后端同步账号档案。' }}
             </p>
           </div>
           <div class="tm-icon-tile bg-[#FFF1E8] text-[#FF7A45]">
@@ -257,27 +441,56 @@ async function submitAuth() {
         <article class="tm-card-muted p-3">
           <ListChecks class="mb-2 text-[#6BAF92]" :size="18" />
           <p class="text-[11px] font-black leading-4 text-[#667085]">已保存忌口</p>
-          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">{{ profileStats.avoidCount }}</p>
+          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">
+            {{ profileStats.avoidCount }}
+          </p>
         </article>
         <article class="tm-card-muted p-3">
           <ClipboardList class="mb-2 text-[#FF7A45]" :size="18" />
           <p class="text-[11px] font-black leading-4 text-[#667085]">过敏提醒</p>
-          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">{{ profileStats.allergyCount }}</p>
+          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">
+            {{ profileStats.allergyCount }}
+          </p>
         </article>
         <article class="tm-card-muted p-3">
           <History class="mb-2 text-[#8ABFE8]" :size="18" />
           <p class="text-[11px] font-black leading-4 text-[#667085]">历史菜单</p>
-          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">{{ profileStats.menuCount }}</p>
+          <p class="mt-1 text-lg font-black leading-6 text-[#1F2937]">
+            {{ profileStats.menuCount }}
+          </p>
         </article>
         <article class="tm-card-muted p-3">
           <CalendarClock class="mb-2 text-[#B95048]" :size="18" />
           <p class="text-[11px] font-black leading-4 text-[#667085]">上次同步</p>
-          <p class="mt-1 text-sm font-black leading-6 text-[#1F2937]">{{ profileStats.updatedAt }}</p>
+          <p class="mt-1 text-sm font-black leading-6 text-[#1F2937]">
+            {{ profileStats.updatedAt }}
+          </p>
         </article>
       </div>
 
       <div class="px-4 pb-4">
-        <div class="rounded-lg border border-[#DCECF8] bg-white p-3">
+        <div v-if="recentOrders.length" class="space-y-2">
+          <article
+            v-for="order in recentOrders.slice(0, 3)"
+            :key="order.id"
+            class="rounded-lg border border-[#DCECF8] bg-white px-3 py-2"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-black leading-5 text-[#1F2937]">
+                  {{ order.restaurant_name || '未命名餐厅' }}
+                </p>
+                <p class="mt-0.5 text-[11px] font-semibold text-[#667085]">
+                  {{ formatShortDate(order.created_at) }}
+                  <span v-if="order.customer_remark"> · {{ order.customer_remark }}</span>
+                </p>
+              </div>
+              <p class="shrink-0 text-sm font-black text-[#FF7A45]">{{ order.total_label }}</p>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="rounded-lg border border-[#DCECF8] bg-white p-3">
           <p class="text-xs font-black text-[#667085]">下一步建议</p>
           <p class="mt-1 text-sm font-semibold leading-5 text-[#1F2937]">
             优先补全过敏信息和常用忌口，之后点餐识别就能自动带上这些提醒啦。

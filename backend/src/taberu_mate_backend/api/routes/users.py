@@ -3,7 +3,7 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from taberu_mate_backend.api.deps import get_current_user, verify_csrf
 from taberu_mate_backend.core.config import Settings, get_settings
@@ -20,6 +20,13 @@ from taberu_mate_backend.core.security import (
     verify_password,
 )
 from taberu_mate_backend.core.security_events import log_security_event
+from taberu_mate_backend.crud.profiles import (
+    count_order_history,
+    create_order_history,
+    get_user_profile,
+    list_order_history,
+    upsert_user_profile,
+)
 from taberu_mate_backend.crud.tokens import (
     get_refresh_token,
     revoke_access_token,
@@ -28,7 +35,16 @@ from taberu_mate_backend.crud.tokens import (
 )
 from taberu_mate_backend.crud.users import create_user, get_user_by_id, get_user_by_username
 from taberu_mate_backend.db.session import get_connection
+from taberu_mate_backend.models.profile import OrderHistory, UserProfile
 from taberu_mate_backend.models.user import User
+from taberu_mate_backend.schemas.profile import (
+    OrderHistoryCreate,
+    OrderHistoryPublic,
+    UserDashboardResponse,
+    UserDashboardStats,
+    UserProfilePublic,
+    UserProfileUpdate,
+)
 from taberu_mate_backend.schemas.user import (
     CsrfTokenResponse,
     TokenResponse,
@@ -226,6 +242,108 @@ def logout_user(
 @router.get("/users/me", response_model=UserPublic, summary="Get current user")
 def get_me(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user
+
+
+@router.get(
+    "/users/me/profile",
+    response_model=UserProfilePublic,
+    summary="Get current user's food profile",
+)
+def get_my_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
+    connection: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> UserProfile:
+    return get_user_profile(connection, current_user.id)
+
+
+@router.put(
+    "/users/me/profile",
+    response_model=UserProfilePublic,
+    summary="Update current user's food profile",
+)
+def update_my_profile(
+    payload: UserProfileUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    connection: Annotated[sqlite3.Connection, Depends(get_connection)],
+    _csrf_verified: Annotated[None, Depends(verify_csrf)],
+) -> UserProfile:
+    return upsert_user_profile(
+        connection,
+        user_id=current_user.id,
+        avoidances=payload.avoidances,
+        allergies=payload.allergies,
+        notes=payload.notes,
+    )
+
+
+@router.get(
+    "/users/me/orders",
+    response_model=list[OrderHistoryPublic],
+    summary="List current user's order history",
+)
+def list_my_order_history(
+    current_user: Annotated[User, Depends(get_current_user)],
+    connection: Annotated[sqlite3.Connection, Depends(get_connection)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[OrderHistory]:
+    return list_order_history(connection, user_id=current_user.id, limit=limit)
+
+
+@router.post(
+    "/users/me/orders",
+    response_model=OrderHistoryPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create current user's order history entry",
+)
+def create_my_order_history(
+    payload: OrderHistoryCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    connection: Annotated[sqlite3.Connection, Depends(get_connection)],
+    _csrf_verified: Annotated[None, Depends(verify_csrf)],
+) -> OrderHistory:
+    return create_order_history(
+        connection,
+        user_id=current_user.id,
+        restaurant_name=payload.restaurant_name,
+        target_language=payload.target_language,
+        customer_remark=payload.customer_remark,
+        total_label=payload.total_label,
+        total_amount=payload.total_amount,
+        items=payload.items,
+        generated_order=payload.generated_order,
+    )
+
+
+@router.get(
+    "/users/me/dashboard",
+    response_model=UserDashboardResponse,
+    summary="Get current user's food profile dashboard",
+)
+def get_my_dashboard(
+    current_user: Annotated[User, Depends(get_current_user)],
+    connection: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> UserDashboardResponse:
+    profile = get_user_profile(connection, current_user.id)
+    recent_orders = list_order_history(connection, user_id=current_user.id, limit=5)
+    order_count = count_order_history(connection, current_user.id)
+    latest_order_at = recent_orders[0].created_at if recent_orders else None
+    updated_at = _latest_datetime(profile.updated_at, latest_order_at)
+
+    return UserDashboardResponse(
+        profile=UserProfilePublic.model_validate(profile),
+        recent_orders=[OrderHistoryPublic.model_validate(order) for order in recent_orders],
+        stats=UserDashboardStats(
+            avoid_count=len(profile.avoidances),
+            allergy_count=len(profile.allergies),
+            order_count=order_count,
+            updated_at=updated_at,
+        ),
+    )
+
+
+def _latest_datetime(*values: datetime | None) -> datetime | None:
+    available = [value for value in values if value is not None]
+    return max(available) if available else None
 
 
 def _username_conflict() -> HTTPException:

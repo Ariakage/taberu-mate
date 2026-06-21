@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         env_prefix="TABERU_MATE_",
         extra="ignore",
     )
@@ -34,6 +35,10 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = "strict"
     auth_login_rate_limit: int = Field(default=5, gt=0)
     auth_login_rate_limit_window_seconds: int = Field(default=300, gt=0)
+    ai_api_key: str = ""
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "gpt-5.5"
+    ai_menu_scan_mock_response_path: Path | None = None
     sentry_dsn: str | None = None
     allowed_origins: list[str] = Field(
         default_factory=lambda: [
@@ -41,6 +46,7 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
         ],
     )
+    allowed_origin_regex: str | None = None
 
     @model_validator(mode="after")
     def reject_development_secrets_for_deployments(self) -> Self:
