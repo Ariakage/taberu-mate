@@ -11,6 +11,10 @@
   </a></h1>
 
 <p align="center">
+  简体中文 | <a href="docs/README.en.md">English</a> | <a href="docs/README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/ariakage/taberu-mate">
     <img src="docs/assets/header.png" alt="TaberuMate Logo" />
   </a>
